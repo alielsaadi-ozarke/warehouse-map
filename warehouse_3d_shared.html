@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1"
+  />
+  <title>3D Warehouse Map – Shared (Render)</title>
+
+  <style>
+    html, body {
+      margin: 0; padding: 0; height: 100%; width: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      background: #000;
+    }
+
+    #app {
+      height: 100%;
+      width: 100%;
+      display: flex;
+      flex-direction: row;
+    }
+
+    #scene {
+      flex: 1;
+      background: #111;
+      height: 100%;
+    }
+
+    #ui {
+      width: 360px;
+      background: #1b1b1b;
+      color: #f2f2f2;
+      padding: 14px;
+      box-sizing: border-box;
+      border-left: 1px solid #333;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+    }
+
+    .panel {
+      background: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    h2 { margin: 6px 0 4px; font-size: 16px; }
+    label { font-size: 13px; color: #bbb; display: block; margin-top: 8px; }
+
+    input[type="text"], input[type="number"], textarea {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #3a3a3a;
+      background: #0f0f0f;
+      color: #e8e8e8;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 10px 12px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    button.primary { background: #2a7fff; color: white; }
+    button.secondary { background: #333; color: #eee; }
+
+    .row { display: flex; gap: 8px; }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .colorbox {
+      width: 14px; height: 14px;
+      border-radius: 3px;
+      border: 1px solid #444;
+    }
+
+    .footer {
+      font-size: 11px;
+      color: #888;
+      margin-top: auto;
+      padding-top: 8px;
+    }
+
+    @media (max-width: 900px) {
+      #app {
+        flex-direction: column;
+      }
+      #scene {
+        width: 100%;
+        height: 55%;
+      }
+      #ui {
+        width: 100%;
+        height: 45%;
+        border-left: none;
+        border-top: 1px solid #333;
+        overflow-y: scroll;
+      }
+
+      h2 { font-size: 18px; }
+      label { font-size: 14px; }
+      input, textarea { font-size: 15px; }
+      button { font-size: 15px; padding: 12px; border-radius: 8px; }
+      .row { flex-direction: column; }
+    }
+  </style>
+</head>
+
+<body>
+<div id="app">
+  <div id="scene"></div>
+
+  <div id="ui">
+    <div class="panel">
+      <h2>Selected Location</h2>
+      <div id="selCode" style="font-size:12px; color:#aaa;">None</div>
+
+      <label>SKU</label>
+      <input id="sku" type="text" placeholder="e.g., SVELTE-4FT" />
+
+      <label>Quantity</label>
+      <input id="qty" type="number" min="0" placeholder="e.g., 24" />
+
+      <label>Notes</label>
+      <textarea id="notes" rows="3"></textarea>
+
+      <div class="row">
+        <button id="saveBtn" class="primary">Save</button>
+        <button id="clearBtn" class="secondary">Clear</button>
+      </div>
+
+      <div class="row">
+        <button id="setSrcBtn" class="secondary">Set Source</button>
+        <button id="moveHereBtn" class="primary">Move Here</button>
+      </div>
+
+      <div id="moveStatus" style="font-size:12px; color:#ccc; margin-top:4px;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Filters</h2>
+
+      <div class="row">
+        <label style="flex:1">Row <input id="fRow" type="text" placeholder="A, B, C, D" /></label>
+        <label style="flex:1">SKU Search <input id="fSku" type="text" placeholder="Search" /></label>
+      </div>
+
+      <div class="row">
+        <button id="applyFilters" class="secondary">Apply</button>
+        <button id="clearFilters" class="secondary">Reset</button>
+      </div>
+
+      <div class="legend-item"><div class="colorbox" style="background:#1f6f1f"></div>Occupied</div>
+      <div class="legend-item"><div class="colorbox" style="background:#555"></div>Empty</div>
+      <div class="legend-item"><div class="colorbox" style="background:#9c6f1f"></div>Selected</div>
+      <div class="legend-item"><div class="colorbox" style="background:#2a7fff"></div>Source</div>
+    </div>
+
+    <div class="panel">
+      <h2>Layout Info</h2>
+      <div style="font-size:12px; color:#bbb;">
+        Rows: A (6 racks), B (7 double), C (8 double), D (17 single)
+      </div>
+    </div>
+
+    <div class="footer">3D Map • Drag to orbit • Pinch to zoom • Two-finger pan</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+  // For now, a static user label; you can later pass this via query string or simple login.
+  const CURRENT_USER = 'warehouse-user';
+
+  // ---- CONFIG ----
+  const CONFIG = {
+    rows: {
+      A: { racks: 6, sides: ['Front'] },
+      B: { racks: 7, sides: ['Front','Back'] },
+      C: { racks: 8, sides: ['Front','Back'] },
+      D: { racks: 17, sides: ['Front'] },
+    },
+    levels: ['Floor','Level 1','Level 2'],
+    bays: ['Left','Right'],
+    rackSpacingX: 2.0,
+    rowSpacingZ: 5.0,
+    sideOffsetZ: 0.8,
+    levelSpacingY: 0.75,
+    bayOffsetX: 0.4,
+    cubeSize: { x: 0.7, y: 0.35, z: 0.7 }
+  };
+
+  const sideAbbrev  = s => s === 'Front' ? 'F'  : 'B';
+  const levelAbbrev = l => l === 'Floor' ? 'FL' : (l === 'Level 1' ? 'L1' : 'L2');
+  const bayAbbrev   = b => b === 'Left'  ? 'L'  : 'R';
+
+  function makeCode(row, rack, side, level, bay) {
+    const r = String(rack).padStart(2,'0');
+    const s = (CONFIG.rows[row].sides.length > 1) ? sideAbbrev(side) : 'F';
+    return row + r + '-' + s + '-' + levelAbbrev(level) + '-' + bayAbbrev(bay);
+  }
+
+  // ---- BUILD LOCATIONS ----
+  const locations = [];
+  (function buildLocations(){
+    const order = ['A','B','C','D'];
+    let zBase = 0;
+    for (const row of order) {
+      const spec = CONFIG.rows[row];
+      const count = spec.racks;
+      const totalWidth = (count-1)*CONFIG.rackSpacingX;
+      const xStart = -totalWidth/2;
+
+      for (let rack=1; rack<=count; rack++) {
+        const xRack = xStart + (rack-1)*CONFIG.rackSpacingX;
+        for (const side of spec.sides) {
+          const zSide = zBase + (side === 'Front' ? -CONFIG.sideOffsetZ : CONFIG.sideOffsetZ);
+          for (let li=0; li<CONFIG.levels.length; li++) {
+            const level = CONFIG.levels[li];
+            const y = li*CONFIG.levelSpacingY + 0.25;
+            for (const bay of CONFIG.bays) {
+              const code = makeCode(row, rack, side, level, bay);
+              const x = xRack + (bay === 'Left' ? -CONFIG.bayOffsetX : CONFIG.bayOffsetX);
+              locations.push({ code, row, rack, side, level, bay, x, y, z: zSide, sku:'', qty:null, notes:'' });
+            }
+          }
+        }
+      }
+      zBase += CONFIG.rowSpacingZ;
+    }
+  })();
+
+  // ---- STATE: LOAD/SAVE FROM SERVER ----
+  async function loadStateFromServer() {
+    try {
+      const res = await fetch('/api/layout');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json(); // [{code, sku, qty, notes}, ...]
+      const map = new Map(data.map(d => [d.code, d]));
+      for (const loc of locations) {
+        const row = map.get(loc.code);
+        if (!row) continue;
+        loc.sku = row.sku || '';
+        loc.qty = (row.qty === 0 || row.qty) ? row.qty : null;
+        loc.notes = row.notes || '';
+      }
+      console.log('Layout loaded from server');
+    } catch (e) {
+      console.error('Failed to load layout from server:', e);
+    }
+  }
+
+  async function saveLocationToServer(loc) {
+    try {
+      await fetch('/api/location/' + encodeURIComponent(loc.code), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sku: loc.sku,
+          qty: loc.qty,
+          notes: loc.notes,
+          updated_by: CURRENT_USER
+        })
+      });
+    } catch (e) {
+      console.error('Failed to save location to server:', e);
+    }
+  }
+
+  // ---- THREE.JS SCENE ----
+  const sceneEl = document.getElementById('scene');
+  const renderer = new THREE.WebGLRenderer({ antialias:true });
+  renderer.setSize(sceneEl.clientWidth, sceneEl.clientHeight);
+  sceneEl.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x101010);
+
+  const camera = new THREE.PerspectiveCamera(
+    50,
+    sceneEl.clientWidth / sceneEl.clientHeight,
+    0.1, 1000
+  );
+  camera.position.set(12, 10, 22);
+  camera.lookAt(new THREE.Vector3(0,2,8));
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.enablePan = true;
+
+  window.addEventListener('resize', () => {
+    renderer.setSize(sceneEl.clientWidth, sceneEl.clientHeight);
+    camera.aspect = sceneEl.clientWidth / sceneEl.clientHeight;
+    camera.updateProjectionMatrix();
+  });
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+  dir.position.set(10,15,10);
+  scene.add(dir);
+
+  const grid = new THREE.GridHelper(80, 80, 0x333333, 0x222222);
+  scene.add(grid);
+
+  function makeTextSprite(text) {
+    const canvas = document.createElement('canvas');
+    const size = 256;
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0)';
+    ctx.fillRect(0,0,size,size);
+    ctx.fillStyle = '#cccccc';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, size/2, size/2);
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent:true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(2,2,1);
+    return sprite;
+  }
+
+  (function addRowLabels(){
+    const order = ['A','B','C','D'];
+    let zBase = 0;
+    for (const row of order) {
+      const label = makeTextSprite('Row ' + row);
+      label.position.set(-8, 2.2, zBase - 1.6);
+      scene.add(label);
+      zBase += CONFIG.rowSpacingZ;
+    }
+  })();
+
+  const cubeGeo     = new THREE.BoxGeometry(CONFIG.cubeSize.x, CONFIG.cubeSize.y, CONFIG.cubeSize.z);
+  const matEmpty    = new THREE.MeshStandardMaterial({ color: 0x555555 });
+  const matOccupied = new THREE.MeshStandardMaterial({ color: 0x1f6f1f });
+  const matSelected = new THREE.MeshStandardMaterial({ color: 0x9c6f1f });
+  const matSource   = new THREE.MeshStandardMaterial({ color: 0x2a7fff });
+
+  const meshByCode = new Map();
+  let selectedCode = null;
+  let sourceCode   = null;
+
+  function matFor(loc){
+    if (loc.code === sourceCode)  return matSource;
+    if (loc.code === selectedCode) return matSelected;
+    return (loc.sku && loc.sku.trim() !== '') ? matOccupied : matEmpty;
+  }
+  function refreshMaterials(){
+    for (const loc of locations) {
+      const m = meshByCode.get(loc.code);
+      if (m) m.material = matFor(loc);
+    }
+  }
+
+  // Create cubes
+  for (const loc of locations) {
+    const cube = new THREE.Mesh(cubeGeo, matFor(loc));
+    cube.position.set(loc.x, loc.y, loc.z);
+    cube.userData.code = loc.code;
+    scene.add(cube);
+    meshByCode.set(loc.code, cube);
+  }
+
+  // Load server state after cubes exist
+  loadStateFromServer().then(refreshMaterials);
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  renderer.domElement.addEventListener('pointerdown', e => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(Array.from(meshByCode.values()));
+    if (hits.length > 0) {
+      selectLocation(hits[0].object.userData.code);
+    }
+  });
+
+  function selectLocation(code){
+    selectedCode = code;
+    const loc = locations.find(l => l.code === code);
+    document.getElementById('selCode').textContent = code || 'None';
+    document.getElementById('sku').value   = loc ? (loc.sku || '')   : '';
+    document.getElementById('qty').value   = loc && (loc.qty===0 || loc.qty) ? loc.qty : '';
+    document.getElementById('notes').value = loc ? (loc.notes || '') : '';
+    refreshMaterials();
+  }
+
+  // --- UI actions ---
+  document.getElementById('saveBtn').onclick = async () => {
+    if (!selectedCode) return;
+    const loc = locations.find(l => l.code === selectedCode);
+    loc.sku   = document.getElementById('sku').value.trim();
+    const q   = document.getElementById('qty').value;
+    loc.qty   = q === '' ? null : Number(q);
+    loc.notes = document.getElementById('notes').value.trim();
+    await saveLocationToServer(loc);
+    refreshMaterials();
+  };
+
+  document.getElementById('clearBtn').onclick = async () => {
+    if (!selectedCode) return;
+    const loc = locations.find(l => l.code === selectedCode);
+    loc.sku = ''; loc.qty = null; loc.notes = '';
+    document.getElementById('sku').value = '';
+    document.getElementById('qty').value = '';
+    document.getElementById('notes').value = '';
+    await saveLocationToServer(loc);
+    refreshMaterials();
+  };
+
+  document.getElementById('setSrcBtn').onclick = () => {
+    if (!selectedCode) return;
+    sourceCode = selectedCode;
+    document.getElementById('moveStatus').textContent = 'Source set: ' + sourceCode;
+    refreshMaterials();
+  };
+
+  document.getElementById('moveHereBtn').onclick = async () => {
+    if (!selectedCode || !sourceCode) {
+      document.getElementById('moveStatus').textContent = 'Select a source, then a destination.';
+      return;
+    }
+    if (selectedCode === sourceCode) {
+      document.getElementById('moveStatus').textContent = 'Source and destination are the same.';
+      return;
+    }
+    const src = locations.find(l => l.code === sourceCode);
+    const dst = locations.find(l => l.code === selectedCode);
+    const dstEmpty = !dst.sku || dst.sku.trim() === '';
+
+    if (dstEmpty) {
+      dst.sku = src.sku; dst.qty = src.qty; dst.notes = src.notes;
+      src.sku = ''; src.qty = null; src.notes = '';
+    } else {
+      const tSku = dst.sku, tQty = dst.qty, tNotes = dst.notes;
+      dst.sku = src.sku; dst.qty = src.qty; dst.notes = src.notes;
+      src.sku = tSku; src.qty = tQty; src.notes = tNotes;
+    }
+
+    await saveLocationToServer(src);
+    await saveLocationToServer(dst);
+
+    document.getElementById('moveStatus').textContent = 'Moved/swapped.';
+    sourceCode = null;
+    refreshMaterials();
+  };
+
+  document.getElementById('applyFilters').onclick = () => {
+    const fRow = document.getElementById('fRow').value.trim().toUpperCase();
+    const fSku = document.getElementById('fSku').value.trim().toUpperCase();
+    for (const loc of locations) {
+      const mesh = meshByCode.get(loc.code);
+      let visible = true;
+      if (fRow && loc.row !== fRow) visible = false;
+      if (fSku && !(loc.sku || '').toUpperCase().includes(fSku)) visible = false;
+      mesh.visible = visible;
+    }
+  };
+
+  document.getElementById('clearFilters').onclick = () => {
+    document.getElementById('fRow').value = '';
+    document.getElementById('fSku').value = '';
+    for (const loc of locations) {
+      const mesh = meshByCode.get(loc.code);
+      mesh.visible = true;
+    }
+  };
+
+  // ---- LOOP ----
+  function animate(){
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+</script>
+
+</body>
+</html>

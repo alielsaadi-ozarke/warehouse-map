@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: warehouse-3d-map
+    env: node
+    plan: free
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    envVars:
+      - key: DB_FILE
+        value: /var/data/warehouse_layout.db
+    disk:
+      name: warehouse-data
+      mountPath: /var/data
+      sizeGB: 1
