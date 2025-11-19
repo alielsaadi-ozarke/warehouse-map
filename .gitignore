@@ -1,0 +1,25 @@
+# Node modules
+node_modules/
+
+# OS junk
+.DS_Store
+public/.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+
+# SQLite database
+warehouse_layout.db
+
+# Accidental weird files
+NUL
+
+# Render build files
+dist/
