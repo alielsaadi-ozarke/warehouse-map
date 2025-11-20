@@ -55,6 +55,7 @@
 
     input[type="text"],
     input[type="number"],
+    input[type="password"],
     textarea {
       width: 100%;
       padding: 10px;
@@ -97,6 +98,32 @@
       color: #888;
       margin-top: auto;
       padding-top: 8px;
+    }
+
+    /* Tab bar */
+    #tabBar {
+      display: flex;
+      margin-bottom: 8px;
+      border-radius: 999px;
+      background: #101010;
+      border: 1px solid #2a2a2a;
+      overflow: hidden;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 8px 10px;
+      font-size: 13px;
+      background: transparent;
+      color: #ccc;
+      border: none;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+
+    .tab-btn.active {
+      background: #2a7fff;
+      color: #fff;
     }
 
     /* On-map camera controls */
@@ -382,41 +409,55 @@
   </div>
 
   <div id="ui">
-    <div class="panel">
-      <h2>Selected Location</h2>
-      <div id="selCode" style="font-size:12px; color:#aaa;">None</div>
 
-      <!-- Match navigation row (Option B) -->
-      <div class="row" id="matchNavRow" style="margin-top:6px; display:none;">
-        <button id="prevMatchBtn" class="secondary" style="flex:0 0 auto; min-width:80px;">◀ Prev</button>
-        <div id="matchInfo" style="flex:1; text-align:center; font-size:12px; color:#ccc; align-self:center;">
-          Match 0 of 0
-        </div>
-        <button id="nextMatchBtn" class="secondary" style="flex:0 0 auto; min-width:80px;">Next ▶</button>
-      </div>
-
-      <label>Items in this location</label>
-      <div id="itemsContainer"></div>
-      <button id="addItemBtn" class="secondary">+ Add SKU</button>
-
-      <label>Location Notes</label>
-      <textarea id="notes" rows="3"></textarea>
-
-      <div class="row" style="margin-top:8px;">
-        <button id="saveBtn" class="primary">Save</button>
-        <button id="clearBtn" class="secondary">Clear</button>
-      </div>
-
-      <div class="row">
-        <button id="setSrcBtn" class="secondary">Set Source</button>
-        <button id="moveHereBtn" class="primary">Move Here</button>
-      </div>
-
-      <div id="moveStatus" style="font-size:12px; color:#ccc; margin-top:4px;"></div>
+    <!-- Tabs -->
+    <div id="tabBar">
+      <button class="tab-btn active" data-tab="general">General</button>
+      <button class="tab-btn" data-tab="admin">Admin</button>
     </div>
 
+    <!-- Admin panel (only visible when Admin tab selected) -->
+    <div class="panel" id="adminPanel">
+      <h2>Admin – Selected Location</h2>
+
+      <!-- Admin login -->
+      <div id="adminLoginBox">
+        <label>Admin Password</label>
+        <input type="password" id="adminPasswordInput" placeholder="Enter admin password" />
+        <button id="adminLoginBtn" class="primary" style="margin-top:8px;">Login as Admin</button>
+        <div id="adminLoginStatus" style="font-size:12px; margin-top:4px; color:#ccc;">
+          Admin login required to edit locations.
+        </div>
+      </div>
+
+      <!-- Admin controls (hidden until logged in) -->
+      <div id="adminControls" style="display:none; margin-top:8px;">
+        <div id="selCode" style="font-size:12px; color:#aaa;">No location selected</div>
+
+        <label>Items in this location</label>
+        <div id="itemsContainer"></div>
+        <button id="addItemBtn" class="secondary">+ Add SKU</button>
+
+        <label>Location Notes</label>
+        <textarea id="notes" rows="3"></textarea>
+
+        <div class="row" style="margin-top:8px;">
+          <button id="saveBtn" class="primary">Save</button>
+          <button id="clearBtn" class="secondary">Clear</button>
+        </div>
+
+        <div class="row">
+          <button id="setSrcBtn" class="secondary">Set Source</button>
+          <button id="moveHereBtn" class="primary">Move Here</button>
+        </div>
+
+        <div id="moveStatus" style="font-size:12px; color:#ccc; margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <!-- General / Search panel (visible on both tabs) -->
     <div class="panel">
-      <h2>Filters</h2>
+      <h2>Find Locations</h2>
 
       <div class="row">
         <label style="flex:1">
@@ -447,13 +488,22 @@
         <button id="clearFilters" class="secondary">Reset</button>
       </div>
 
+      <!-- Match navigation moved here so warehouse workers can use it -->
+      <div class="row" id="matchNavRow" style="margin-top:6px; display:none;">
+        <button id="prevMatchBtn" class="secondary" style="flex:0 0 auto; min-width:80px;">◀ Prev</button>
+        <div id="matchInfo" style="flex:1; text-align:center; font-size:12px; color:#ccc; align-self:center;">
+          Match 0 of 0
+        </div>
+        <button id="nextMatchBtn" class="secondary" style="flex:0 0 auto; min-width:80px;">Next ▶</button>
+      </div>
+
       <div id="searchStatus"></div>
 
       <div style="margin-top:8px;">
         <div class="legend-item"><div class="colorbox" style="background:#1f6f1f"></div>Occupied (any SKU)</div>
         <div class="legend-item"><div class="colorbox" style="background:#555"></div>Empty</div>
-        <div class="legend-item"><div class="colorbox" style="background:#9c6f1f"></div>Selected</div>
-        <div class="legend-item"><div class="colorbox" style="background:#2a7fff"></div>Source</div>
+        <div class="legend-item"><div class="colorbox" style="background:#9c6f1f"></div>Selected (admin)</div>
+        <div class="legend-item"><div class="colorbox" style="background:#2a7fff"></div>Source (admin)</div>
       </div>
     </div>
 
@@ -465,7 +515,7 @@
     </div>
 
     <div class="footer">
-      3D Map • Drag to orbit • Pinch to zoom • Use arrows & +/- & ⟳ on the map
+      General tab: search & view. • Admin tab: login to edit locations.
     </div>
   </div>
 </div>
