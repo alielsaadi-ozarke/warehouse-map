@@ -1,62 +1,74 @@
 // public/js/warehouse-api.js
+// Backend communication for 3D warehouse map.
+//
+// Expects a global LOCATIONS array created in warehouse-config.js.
+//
+// Endpoints used:
+//   GET  /api/layout
+//   POST /api/location/:code   (admin-only, JWT protected)
 
-const CURRENT_USER = 'warehouse-user';
-
-// Load all saved locations from backend and merge into LOCATIONS
 async function loadStateFromServer() {
   try {
-    const res = await fetch('/api/layout');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json(); // [{code, notes, items:[...]}, ...]
-
-    const map = new Map(data.map((loc) => [loc.code, loc]));
-
-    for (const loc of LOCATIONS) {
-      const row = map.get(loc.code);
-      if (!row) {
-        loc.items = [];
-        loc.notes = '';
-        continue;
-      }
-
-      loc.notes = row.notes || '';
-
-      const items = Array.isArray(row.items) ? row.items : [];
-      loc.items = items
-        .filter((it) => it && typeof it.sku === 'string' && it.sku.trim() !== '')
-        .map((it) => ({
-          sku: it.sku.trim(),
-          qty:
-            it.qty === 0 || typeof it.qty === 'number'
-              ? it.qty
-              : null,
-        }));
+    const resp = await fetch('/api/layout');
+    if (!resp.ok) {
+      console.error('loadStateFromServer: HTTP', resp.status);
+      return;
     }
+    const rows = await resp.json();
 
-    console.log('Layout loaded from server (multi-SKU)');
+    const byCode = new Map(rows.map((r) => [r.code, r]));
+
+    // Merge DB data (items + notes) into existing LOCATIONS
+    LOCATIONS.forEach((loc) => {
+      const dbRow = byCode.get(loc.code);
+      if (!dbRow) return;
+      loc.items = Array.isArray(dbRow.items) ? dbRow.items : [];
+      loc.notes = dbRow.notes || '';
+    });
   } catch (err) {
-    console.error('Failed to load layout from server:', err);
+    console.error('loadStateFromServer failed:', err);
   }
 }
 
-// Save a single location (notes + all items) to backend
-async function saveLocationToServer(loc) {
+// Helper to get stored admin token
+function getAdminToken() {
   try {
-    const payload = {
-      notes: loc.notes || '',
-      items: (loc.items || []).map((it) => ({
-        sku: it.sku,
-        qty: it.qty,
-      })),
-      updated_by: CURRENT_USER,
-    };
+    return localStorage.getItem('warehouseAdminToken') || null;
+  } catch {
+    return null;
+  }
+}
 
-    await fetch('/api/location/' + encodeURIComponent(loc.code), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    console.error('Failed to save location to server:', err);
+async function saveLocationToServer(loc) {
+  const token = getAdminToken();
+  if (!token) {
+    throw new Error('Admin token missing – please log in again.');
+  }
+
+  const payload = {
+    code: loc.code,
+    items: loc.items || [],
+    notes: loc.notes || '',
+  };
+
+  const resp = await fetch('/api/location/' + encodeURIComponent(loc.code), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer ' + token,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!resp.ok) {
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error('Not authorized – session may have expired. Please log in again.');
+    }
+    const txt = await resp.text().catch(() => '');
+    throw new Error(
+      'Save failed with status ' +
+        resp.status +
+        (txt ? ': ' + txt : '')
+    );
   }
 }

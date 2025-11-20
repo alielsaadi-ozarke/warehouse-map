@@ -7,6 +7,11 @@
 // - saveLocationToServer()
 
 // -----------------------------------------------------------------------------
+// Admin state
+// -----------------------------------------------------------------------------
+let isAdmin = false;
+
+// -----------------------------------------------------------------------------
 // FIXED DEFAULT VIEW (from your captured values)
 // -----------------------------------------------------------------------------
 const INITIAL_TARGET = new THREE.Vector3(1.0, 2.0, 6.7);
@@ -107,7 +112,6 @@ const meshByCode = new Map();
 let selectedCode = null;
 let sourceCode = null;
 
-// occupied if it has any items
 function isOccupied(loc) {
   return loc.items && loc.items.length > 0;
 }
@@ -125,7 +129,6 @@ function refreshMaterials() {
   }
 }
 
-// Build cubes
 for (const loc of LOCATIONS) {
   const cube = new THREE.Mesh(cubeGeo, matFor(loc));
   cube.position.set(loc.x, loc.y, loc.z);
@@ -135,7 +138,7 @@ for (const loc of LOCATIONS) {
 }
 
 // -----------------------------------------------------------------------------
-// Filter UI elements + SKU combo behavior
+// Filters + SKU dropdown
 // -----------------------------------------------------------------------------
 const fRowEl = document.getElementById('fRow');
 const fSkuInputEl = document.getElementById('fSkuInput');
@@ -143,14 +146,13 @@ const fSkuToggleEl = document.getElementById('fSkuToggle');
 const fSkuListPanelEl = document.getElementById('fSkuListPanel');
 const searchStatusEl = document.getElementById('searchStatus');
 
-let allSkus = [];
-
-// Match navigation state (for Option B)
+// Match navigation
 const matchNavRow = document.getElementById('matchNavRow');
 const prevMatchBtn = document.getElementById('prevMatchBtn');
 const nextMatchBtn = document.getElementById('nextMatchBtn');
 const matchInfoEl = document.getElementById('matchInfo');
 
+let allSkus = [];
 let lastMatchingCodes = [];
 let currentMatchIndex = -1;
 
@@ -174,15 +176,10 @@ function updateMatchNavUI() {
 
 function setMatchResults(codes) {
   lastMatchingCodes = codes.slice();
-  if (lastMatchingCodes.length > 0) {
-    currentMatchIndex = 0;
-  } else {
-    currentMatchIndex = -1;
-  }
+  currentMatchIndex = lastMatchingCodes.length > 0 ? 0 : -1;
   updateMatchNavUI();
 }
 
-// Rebuild SKU list panel from LOCATIONS
 function rebuildSkuList() {
   const skuSet = new Set();
   for (const loc of LOCATIONS) {
@@ -198,12 +195,10 @@ function rebuildSkuList() {
   );
 
   const previous = fSkuInputEl.value;
-
   renderSkuPanel(allSkus, previous);
 }
 
-// Render the dropdown panel given a list of SKUs
-function renderSkuPanel(list, highlightValue) {
+function renderSkuPanel(list) {
   fSkuListPanelEl.innerHTML = '';
 
   if (!list.length) {
@@ -218,9 +213,6 @@ function renderSkuPanel(list, highlightValue) {
     const div = document.createElement('div');
     div.className = 'sku-option';
     div.textContent = sku;
-    if (highlightValue && sku === highlightValue) {
-      // could style highlight if desired
-    }
     div.addEventListener('click', (e) => {
       e.stopPropagation();
       fSkuInputEl.value = sku;
@@ -231,9 +223,7 @@ function renderSkuPanel(list, highlightValue) {
 }
 
 function showSkuPanel() {
-  if (!allSkus.length) {
-    rebuildSkuList();
-  }
+  if (!allSkus.length) rebuildSkuList();
   fSkuListPanelEl.style.display = 'block';
 }
 
@@ -242,53 +232,35 @@ function hideSkuPanel() {
 }
 
 function toggleSkuPanel() {
-  if (fSkuListPanelEl.style.display === 'block') {
-    hideSkuPanel();
-  } else {
-    showSkuPanel();
-  }
+  if (fSkuListPanelEl.style.display === 'block') showSkuPanel();
+  else showSkuPanel();
 }
 
-// Filter dropdown as user types
 fSkuInputEl.addEventListener('input', (e) => {
   const term = e.target.value.trim().toUpperCase();
   searchStatusEl.textContent = '';
 
-  if (!allSkus.length) {
-    rebuildSkuList();
-  }
+  if (!allSkus.length) rebuildSkuList();
 
   const filtered = term
     ? allSkus.filter((sku) => sku.toUpperCase().includes(term))
     : allSkus.slice();
 
-  renderSkuPanel(filtered, null);
+  renderSkuPanel(filtered);
 
-  if (term) {
-    showSkuPanel();
-  }
+  if (term) showSkuPanel();
 });
 
-// Toggle on arrow click
 fSkuToggleEl.addEventListener('click', (e) => {
   e.stopPropagation();
   toggleSkuPanel();
 });
 
-// Hide dropdown when clicking outside
-document.addEventListener('click', () => {
-  hideSkuPanel();
-});
+document.addEventListener('click', () => hideSkuPanel());
+fSkuListPanelEl.addEventListener('click', (e) => e.stopPropagation());
+fSkuInputEl.addEventListener('click', (e) => e.stopPropagation());
 
-// Prevent clicks inside the combo from closing it
-fSkuListPanelEl.addEventListener('click', (e) => {
-  e.stopPropagation();
-});
-fSkuInputEl.addEventListener('click', (e) => {
-  e.stopPropagation();
-});
-
-// Load state from backend then update materials & SKU list
+// Load DB state then refresh materials + SKUs
 loadStateFromServer().then(() => {
   refreshMaterials();
   rebuildSkuList();
@@ -296,7 +268,7 @@ loadStateFromServer().then(() => {
 });
 
 // -----------------------------------------------------------------------------
-// Picking / selection + raycaster (also used for hover)
+// Picking & hover
 // -----------------------------------------------------------------------------
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -309,12 +281,11 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   const hits = raycaster.intersectObjects(Array.from(meshByCode.values()));
   if (hits.length > 0) {
     selectLocation(hits[0].object.userData.code);
-    // manual click does not change match list, just selection
   }
 });
 
 // -----------------------------------------------------------------------------
-// UI: multi-SKU list
+// Admin UI: multi-SKU, notes
 // -----------------------------------------------------------------------------
 const selCodeEl = document.getElementById('selCode');
 const itemsContainer = document.getElementById('itemsContainer');
@@ -357,9 +328,7 @@ function createItemRow(item = { sku: '', qty: null }) {
 function renderItemsForLocation(loc) {
   itemsContainer.innerHTML = '';
   let items = loc && Array.isArray(loc.items) ? loc.items : [];
-  if (items.length === 0) {
-    items = [{ sku: '', qty: null }];
-  }
+  if (items.length === 0) items = [{ sku: '', qty: null }];
   for (const it of items) {
     itemsContainer.appendChild(createItemRow(it));
   }
@@ -373,7 +342,7 @@ function collectItemsFromUI() {
     const qtyInput = row.querySelector('.item-qty');
     const sku = skuInput.value.trim();
     const qtyStr = qtyInput.value;
-    if (!sku) return; // skip blank sku rows
+    if (!sku) return;
     const qty = qtyStr === '' ? null : Number(qtyStr);
     items.push({ sku, qty });
   });
@@ -381,6 +350,10 @@ function collectItemsFromUI() {
 }
 
 addItemBtn.addEventListener('click', () => {
+  if (!isAdmin) {
+    alert('Admin login required to edit items.');
+    return;
+  }
   itemsContainer.appendChild(createItemRow());
 });
 
@@ -390,23 +363,28 @@ addItemBtn.addEventListener('click', () => {
 function selectLocation(code) {
   selectedCode = code;
   const loc = LOCATIONS.find((l) => l.code === code);
-  selCodeEl.textContent = code || 'None';
   if (!loc) {
+    selCodeEl.textContent = 'No location selected';
     itemsContainer.innerHTML = '';
     notesEl.value = '';
     refreshMaterials();
     return;
   }
 
+  selCodeEl.textContent = code;
   renderItemsForLocation(loc);
   notesEl.value = loc.notes || '';
   refreshMaterials();
 }
 
 // -----------------------------------------------------------------------------
-// UI buttons: save / clear / move
+// Admin buttons: save / clear / move
 // -----------------------------------------------------------------------------
 document.getElementById('saveBtn').onclick = async () => {
+  if (!isAdmin) {
+    alert('Admin only: please login on the Admin tab.');
+    return;
+  }
   if (!selectedCode) return;
   const loc = LOCATIONS.find((l) => l.code === selectedCode);
   if (!loc) return;
@@ -414,12 +392,20 @@ document.getElementById('saveBtn').onclick = async () => {
   loc.items = collectItemsFromUI();
   loc.notes = notesEl.value.trim();
 
-  await saveLocationToServer(loc);
+  try {
+    await saveLocationToServer(loc);
+  } catch (err) {
+    alert(err.message || 'Save failed');
+  }
   refreshMaterials();
   rebuildSkuList();
 };
 
 document.getElementById('clearBtn').onclick = async () => {
+  if (!isAdmin) {
+    alert('Admin only: please login on the Admin tab.');
+    return;
+  }
   if (!selectedCode) return;
   const loc = LOCATIONS.find((l) => l.code === selectedCode);
   if (!loc) return;
@@ -429,12 +415,20 @@ document.getElementById('clearBtn').onclick = async () => {
   notesEl.value = '';
   renderItemsForLocation(loc);
 
-  await saveLocationToServer(loc);
+  try {
+    await saveLocationToServer(loc);
+  } catch (err) {
+    alert(err.message || 'Clear failed');
+  }
   refreshMaterials();
   rebuildSkuList();
 };
 
 document.getElementById('setSrcBtn').onclick = () => {
+  if (!isAdmin) {
+    alert('Admin only: please login on the Admin tab.');
+    return;
+  }
   if (!selectedCode) return;
   sourceCode = selectedCode;
   document.getElementById('moveStatus').textContent =
@@ -443,6 +437,10 @@ document.getElementById('setSrcBtn').onclick = () => {
 };
 
 document.getElementById('moveHereBtn').onclick = async () => {
+  if (!isAdmin) {
+    alert('Admin only: please login on the Admin tab.');
+    return;
+  }
   if (!selectedCode || !sourceCode) {
     document.getElementById('moveStatus').textContent =
       'Select a source, then a destination.';
@@ -481,8 +479,12 @@ document.getElementById('moveHereBtn').onclick = async () => {
     src.notes = tNotes;
   }
 
-  await saveLocationToServer(src);
-  await saveLocationToServer(dst);
+  try {
+    await saveLocationToServer(src);
+    await saveLocationToServer(dst);
+  } catch (err) {
+    alert(err.message || 'Move failed');
+  }
 
   selectLocation(selectedCode);
   document.getElementById('moveStatus').textContent = 'Moved/swapped.';
@@ -492,18 +494,16 @@ document.getElementById('moveHereBtn').onclick = async () => {
 };
 
 // -----------------------------------------------------------------------------
-// Flashing logic for search results
+// Flashing + camera fly
 // -----------------------------------------------------------------------------
-const FLASH_DURATION_MS = 1200;      // total flash duration per cube
-const FLASH_FREQ_HZ = 4;            // pulses per second
-const FLASH_SCALE_AMPLITUDE = 0.35; // pulse size
-
-let flashTargets = []; // { mesh, startTime }
+const FLASH_DURATION_MS = 1200;
+const FLASH_FREQ_HZ = 4;
+const FLASH_SCALE_AMPLITUDE = 0.35;
+let flashTargets = [];
 
 function flashCubes(codes) {
   const now = performance.now();
-  flashTargets = []; // reset previous flashes
-
+  flashTargets = [];
   codes.forEach((code) => {
     const mesh = meshByCode.get(code);
     if (!mesh) return;
@@ -512,10 +512,7 @@ function flashCubes(codes) {
   });
 }
 
-// -----------------------------------------------------------------------------
-// Smooth camera fly-to for first matching location
-// -----------------------------------------------------------------------------
-let flyState = null; // { startTime, duration, startPos, startTarget, endPos, endTarget }
+let flyState = null;
 const FLY_DURATION_MS = 700;
 
 function flyToLocation(code) {
@@ -523,8 +520,6 @@ function flyToLocation(code) {
   if (!mesh) return;
 
   const targetPos = mesh.position.clone();
-
-  // Keep same distance from target as current view
   const currentTarget = controls.target.clone();
   const offset = camera.position.clone().sub(currentTarget);
   const distance = offset.length();
@@ -544,7 +539,7 @@ function flyToLocation(code) {
 }
 
 // -----------------------------------------------------------------------------
-// Filters
+// Filters / search
 // -----------------------------------------------------------------------------
 document.getElementById('applyFilters').onclick = () => {
   const rowFilter = fRowEl.value.trim().toUpperCase();
@@ -552,13 +547,12 @@ document.getElementById('applyFilters').onclick = () => {
 
   searchStatusEl.textContent = '';
 
-  // If nothing entered, do nothing (just keep view)
   if (!rowFilter && !skuTerm) {
     searchStatusEl.textContent = '';
+    setMatchResults([]);
     return;
   }
 
-  // Ensure ALL cubes remain visible
   for (const mesh of meshByCode.values()) {
     mesh.visible = true;
   }
@@ -568,9 +562,7 @@ document.getElementById('applyFilters').onclick = () => {
   for (const loc of LOCATIONS) {
     let match = true;
 
-    if (rowFilter && loc.row !== rowFilter) {
-      match = false;
-    }
+    if (rowFilter && loc.row !== rowFilter) match = false;
 
     if (skuTerm) {
       let hasMatch = false;
@@ -595,16 +587,11 @@ document.getElementById('applyFilters').onclick = () => {
     return;
   }
 
-  // Store match results and select the first matching location
   setMatchResults(matchingCodes);
 
   const firstCode = lastMatchingCodes[0];
   selectLocation(firstCode);
-
-  // Flash all matching cubes
   flashCubes(matchingCodes);
-
-  // Fly camera to the first matching location
   flyToLocation(firstCode);
 };
 
@@ -613,18 +600,11 @@ document.getElementById('clearFilters').onclick = () => {
   fSkuInputEl.value = '';
   searchStatusEl.textContent = '';
 
-  // Make sure everything remains visible
-  for (const mesh of meshByCode.values()) {
-    mesh.visible = true;
-  }
+  for (const mesh of meshByCode.values()) mesh.visible = true;
 
-  // Clear match navigation
   setMatchResults([]);
 };
 
-// -----------------------------------------------------------------------------
-// Match navigation buttons (Option B)
-// -----------------------------------------------------------------------------
 prevMatchBtn.addEventListener('click', () => {
   if (lastMatchingCodes.length === 0) return;
   currentMatchIndex =
@@ -649,7 +629,7 @@ nextMatchBtn.addEventListener('click', () => {
 });
 
 // -----------------------------------------------------------------------------
-// Camera pan / zoom / recenter (camera-relative arrows)
+// Camera controls
 // -----------------------------------------------------------------------------
 const PAN_SPEED = 1.2;
 const MIN_DIST = 6;
@@ -658,7 +638,7 @@ const MAX_DIST = 60;
 function getCameraForwardVector() {
   const forward = new THREE.Vector3();
   camera.getWorldDirection(forward);
-  forward.y = 0; // keep on warehouse floor
+  forward.y = 0;
   forward.normalize();
   return forward;
 }
@@ -686,7 +666,6 @@ function panCamera(direction) {
 }
 
 function zoomCamera(direction) {
-  // direction: -1 = zoom in, +1 = zoom out
   const target = controls.target.clone();
   const offset = camera.position.clone().sub(target);
   const distance = offset.length();
@@ -707,25 +686,14 @@ function recenterCamera() {
   controls.update();
 }
 
-// Hook up camera control buttons
 document.querySelectorAll('.cam-btn').forEach((btn) => {
   const action = btn.dataset.action;
   if (!action) return;
   btn.addEventListener('click', () => {
-    switch (action) {
-      case 'pan-up':
-        panCamera('up');
-        break;
-      case 'pan-down':
-        panCamera('down');
-        break;
-      case 'pan-left':
-        panCamera('left');
-        break;
-      case 'pan-right':
-        panCamera('right');
-        break;
-    }
+    if (action === 'pan-up') panCamera('up');
+    if (action === 'pan-down') panCamera('down');
+    if (action === 'pan-left') panCamera('left');
+    if (action === 'pan-right') panCamera('right');
   });
 });
 
@@ -739,7 +707,7 @@ document.querySelectorAll('.zoom-btn').forEach((btn) => {
 });
 
 // -----------------------------------------------------------------------------
-// Hover tooltip logic
+// Hover tooltip
 // -----------------------------------------------------------------------------
 const tooltipEl = document.getElementById('cubeTooltip');
 const tooltipCodeEl = tooltipEl.querySelector('.loc-code');
@@ -781,7 +749,6 @@ function showTooltipForLocation(loc, screenX, screenY) {
   tooltipEl.style.top = `${localY + offsetY}px`;
 }
 
-// Use pointermove for hover
 renderer.domElement.addEventListener('pointermove', (e) => {
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -800,28 +767,117 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   showTooltipForLocation(loc, e.clientX, e.clientY);
 });
 
-// Hide tooltip when pointer leaves the canvas
-renderer.domElement.addEventListener('pointerleave', () => {
-  hideTooltip();
-});
+renderer.domElement.addEventListener('pointerleave', () => hideTooltip());
 
 // -----------------------------------------------------------------------------
-// Render loop (with flash + fly animation)
+// Tabs & admin login (via /api/login)
+// -----------------------------------------------------------------------------
+const tabButtons = document.querySelectorAll('.tab-btn');
+const adminPanelEl = document.getElementById('adminPanel');
+const adminLoginBoxEl = document.getElementById('adminLoginBox');
+const adminControlsEl = document.getElementById('adminControls');
+const adminPasswordInputEl = document.getElementById('adminPasswordInput');
+const adminLoginStatusEl = document.getElementById('adminLoginStatus');
+const adminLoginBtn = document.getElementById('adminLoginBtn');
+
+let currentTab = 'general';
+
+function setAdminState(value) {
+  isAdmin = value;
+  if (isAdmin) {
+    adminLoginBoxEl.style.display = 'none';
+    adminControlsEl.style.display = 'block';
+  } else {
+    adminLoginBoxEl.style.display = 'block';
+    adminControlsEl.style.display = 'none';
+    try {
+      localStorage.removeItem('warehouseAdminToken');
+    } catch {}
+  }
+}
+
+function applyTabUI() {
+  tabButtons.forEach((btn) => {
+    const tab = btn.dataset.tab;
+    btn.classList.toggle('active', tab === currentTab);
+  });
+
+  adminPanelEl.style.display = currentTab === 'admin' ? 'block' : 'none';
+}
+
+tabButtons.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    currentTab = btn.dataset.tab;
+    applyTabUI();
+  });
+});
+
+adminLoginBtn.addEventListener('click', async () => {
+  const pw = adminPasswordInputEl.value.trim();
+  if (!pw) {
+    adminLoginStatusEl.style.color = '#ffb347';
+    adminLoginStatusEl.textContent = 'Please enter a password.';
+    return;
+  }
+
+  try {
+    const resp = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+
+    if (!resp.ok) {
+      adminLoginStatusEl.style.color = '#ff5555';
+      adminLoginStatusEl.textContent = 'Login failed: incorrect password.';
+      setAdminState(false);
+      return;
+    }
+
+    const data = await resp.json();
+    const token = data.token;
+    if (!token) {
+      adminLoginStatusEl.style.color = '#ff5555';
+      adminLoginStatusEl.textContent = 'Login failed: no token returned.';
+      setAdminState(false);
+      return;
+    }
+
+    try {
+      localStorage.setItem('warehouseAdminToken', token);
+    } catch {}
+
+    adminLoginStatusEl.style.color = '#7CFC00';
+    adminLoginStatusEl.textContent = 'Success – admin access enabled.';
+    setAdminState(true);
+  } catch (err) {
+    console.error('Admin login error', err);
+    adminLoginStatusEl.style.color = '#ff5555';
+    adminLoginStatusEl.textContent = 'Login failed – network/server error.';
+    setAdminState(false);
+  }
+});
+
+// Restore admin state if token is present (best-effort)
+try {
+  const existing = localStorage.getItem('warehouseAdminToken');
+  setAdminState(!!existing);
+} catch {
+  setAdminState(false);
+}
+applyTabUI();
+
+// -----------------------------------------------------------------------------
+// Main render loop
 // -----------------------------------------------------------------------------
 function animate() {
   requestAnimationFrame(animate);
 
-  // Handle camera fly animation
   if (flyState) {
     const now = performance.now();
     const elapsed = now - flyState.startTime;
     let t = elapsed / flyState.duration;
-
-    if (t >= 1) {
-      t = 1;
-    }
-
-    // Ease in-out
+    if (t >= 1) t = 1;
     const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 
     camera.position.lerpVectors(flyState.startPos, flyState.endPos, ease);
@@ -831,14 +887,11 @@ function animate() {
       ease
     );
 
-    if (t === 1) {
-      flyState = null;
-    }
+    if (t === 1) flyState = null;
   }
 
   controls.update();
 
-  // Flash animation
   if (flashTargets.length > 0) {
     const now = performance.now();
     flashTargets = flashTargets.filter((t) => {
